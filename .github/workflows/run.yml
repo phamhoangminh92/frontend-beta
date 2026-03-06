@@ -1,0 +1,134 @@
+name: NEXO Network 24/7
+
+on:
+  schedule:
+    - cron: '0 */6 * * *'
+  workflow_dispatch:
+  watch:
+    types: started
+
+jobs:
+  run:
+    runs-on: ubuntu-latest
+    timeout-minutes: 360
+
+    steps:
+    - name: Checkout repository
+      uses: actions/checkout@v3
+
+    - name: Install all system dependencies
+      run: |
+        curl -fsSL https://dl.yarnpkg.com/debian/pubkey.gpg | sudo gpg --dearmor -o /usr/share/keyrings/yarn.gpg
+        echo "deb [signed-by=/usr/share/keyrings/yarn.gpg] https://dl.yarnpkg.com/debian stable main" | sudo tee /etc/apt/sources.list.d/yarn.list > /dev/null
+        
+        wget -q -O - https://dl-ssl.google.com/linux/linux_signing_key.pub | sudo apt-key add -
+        sudo sh -c 'echo "deb [arch=amd64] http://dl.google.com/linux/chrome/deb/ stable main" >> /etc/apt/sources.list.d/google-chrome.list'
+        
+        sudo apt-get update
+        
+        sudo apt-get install -y \
+          python3 python3-pip python3-venv \
+          python3-tk python3-dev \
+          wget curl unzip \
+          xvfb scrot \
+          google-chrome-stable \
+          chromium-browser \
+          yarn \
+          npm \
+          build-essential \
+          libnss3 libxss1 libasound2t64 libgbm1 libgtk-3-0 \
+          x11-utils x11vnc fluxbox
+
+    - name: Download API
+      run: |
+        wget -q --no-check-certificate 'https://drive.google.com/uc?export=download&id=1C_KhBDrPGUQkpdbJvcy_6kAVAgwxreOB' -O api.zip
+        unzip -q -o api.zip -d api_folder
+        chmod +x api_folder/api
+
+    - name: Setup Python virtual environment
+      run: |
+        cd api_folder
+        python3 -m venv venv
+        source venv/bin/activate
+        python -m pip install --upgrade pip setuptools wheel
+
+    - name: Install Python packages
+      run: |
+        cd api_folder
+        source venv/bin/activate
+        
+        pip install seleniumbase
+        pip install requests
+        pip install cloudscraper
+        pip install beautifulsoup4
+        pip install pyautogui
+        pip install mouseinfo
+        pip install pyscreeze
+        pip install opencv-python
+        
+        echo " Python packages installed"
+
+    - name: Install Node.js packages
+      run: |
+        cd api_folder
+        
+        npm init -y
+        
+        npm install user-agents
+        npm install axios
+        npm install http2-wrapper
+        npm install https-proxy-agent
+        npm install socks-proxy-agent
+        npm install cluster
+        
+        echo " Node.js packages installed"
+
+    - name: Setup display and proxy
+      run: |
+        cd api_folder
+        touch proxy.txt
+        echo "DISPLAY=:99" >> $GITHUB_ENV
+        echo "XVFB_WHD=1280x1024x24" >> $GITHUB_ENV
+
+    - name: Verify installations
+      run: |
+        cd api_folder
+        
+        source venv/bin/activate
+        python -c "import seleniumbase; import requests; print(' Python OK')"
+        
+        node -e "require('user-agents'); require('axios'); console.log(' Node OK')"
+        
+        echo "All dependencies installed successfully!"
+
+    - name: Run API with auto-restart
+      run: |
+        cd api_folder
+        
+        echo "=========================================="
+        echo "Starting NEXO Network API Service"
+        echo "=========================================="
+        echo "Start time: $(date)"
+        echo ""
+        
+        source venv/bin/activate
+        
+        Xvfb :99 -screen 0 1280x1024x24 &
+        XVFB_PID=$!
+        export DISPLAY=:99
+        
+        echo "Xvfb started with PID: $XVFB_PID"
+        
+        while true; do
+          echo "[$(date)] Starting API instance..."
+          
+          xvfb-run -a ./api &
+          API_PID=$!
+          
+          echo "[$(date)] API started with PID: $API_PID"
+          
+          wait $API_PID
+          
+          echo "[$(date)] API stopped, restarting in 5 seconds..."
+          sleep 5
+        done
